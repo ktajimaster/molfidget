@@ -487,5 +487,36 @@ def main():
     with open(os.path.join(args.output_dir, "config.yaml"), 'w') as file:
         yaml.dump(config_data, file, default_flow_style=False)
 
+    # Save the configuration to a CML file
+    with open(os.path.join(args.output_dir, f"{molecule.name}.cml"), 'w') as file:
+        file.write(f'<?xml version="1.0" encoding="UTF-8"?>\n')
+        file.write(f'<molecule xmlns="http://www.xml-cml.org/schema" xmlns:cml="http://www.xml-cml.org/dict/cml" xmlns:units="http://www.xml-cml.org/units/units" xmlns:xsd="http://www.w3c.org/2001/XMLSchema" xmlns:iupac="http://www.iupac.org" xmlns:molfidget="https://github.com/longjie0723/molfidget"> id="{molecule.name}">\n')
+        file.write(f'    <atomArray>\n')
+        for atom in molecule.atoms.values():
+            file.write(f'      <atom id="{atom.name}_{atom.id}" elementType="{atom.name}" x3="{atom.x}" y3="{atom.y}" z3="{atom.z}"/>\n')
+        file.write(f'    </atomArray>\n')
+        file.write(f'    <bondArray>\n')
+        # Write bonds
+        written_bonds = set()
+        for atom in molecule.atoms.values():
+            for (id1, id2), bond in atom.pairs.items():
+                # Avoid writing the same bond twice
+                bond_key = tuple(sorted([id1, id2]))
+                if bond_key not in written_bonds and bond.type != "none":
+                    written_bonds.add(bond_key)
+                    atom1_id = molecule.atoms[id1].name + '_' + str(id1)
+                    atom2_id = molecule.atoms[id2].name + '_' + str(id2)
+                    bond_order = 1
+                    if bond.type == "double":
+                        bond_order = 2
+                    elif bond.type == "triple":
+                        bond_order = 3
+                    file.write(f'      <bond atomRefs2="{atom1_id} {atom2_id}" order="{bond_order}"/>\n')
+                    file.write(f'       <property dictRef="molfidget:bond_gap">\n')
+                    file.write(f'           <scalar units="units:angstrom">{config.bond_gap}</scalar>\n')
+                    file.write(f'       </property>\n')
+        file.write(f'    </bondArray>\n')
+        file.write(f'  </molecule>\n')
+
 if __name__ == "__main__":
     main()
