@@ -488,9 +488,12 @@ def main():
         yaml.dump(config_data, file, default_flow_style=False)
 
     # Save the configuration to a CML file
-    with open(os.path.join(args.output_dir, f"{molecule.name}.cml"), 'w') as file:
+    input_file_name = os.path.splitext(os.path.basename(args.file_name))[0]
+    with open(os.path.join(args.output_dir, f"{input_file_name}.cml"), 'w') as file:
         file.write(f'<?xml version="1.0" encoding="UTF-8"?>\n')
-        file.write(f'<molecule xmlns="http://www.xml-cml.org/schema" xmlns:cml="http://www.xml-cml.org/dict/cml" xmlns:units="http://www.xml-cml.org/units/units" xmlns:xsd="http://www.w3c.org/2001/XMLSchema" xmlns:iupac="http://www.iupac.org" xmlns:molfidget="https://github.com/longjie0723/molfidget"> id="{molecule.name}">\n')
+        file.write(f'<molecule xmlns="http://www.xml-cml.org/schema" xmlns:cml="http://www.xml-cml.org/dict/cml"\
+                   xmlns:units="http://www.xml-cml.org/units/units" xmlns:xsd="http://www.w3c.org/2001/XMLSchema"\
+                   xmlns:iupac="http://www.iupac.org" xmlns:molfidget="https://github.com/longjie0723/molfidget"> id="{input_file_name}">\n')
         file.write(f'    <atomArray>\n')
         for atom in molecule.atoms.values():
             file.write(f'      <atom id="{atom.name}_{atom.id}" elementType="{atom.name}" x3="{atom.x}" y3="{atom.y}" z3="{atom.z}"/>\n')
