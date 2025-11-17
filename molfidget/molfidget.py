@@ -35,6 +35,8 @@ atom_radius_table = {
     "Se": 1.9,
     "Br": 1.85,
     "I": 1.98,
+    "Fe": 1.63,
+    "Pd": 1.40,
 }
 
 atom_color_table = {
@@ -62,6 +64,8 @@ atom_color_table = {
     "Se": [255, 161, 0, 255],
     "Br": [255, 64, 64, 255],
     "I": [148, 0, 148, 255],
+    "Fe": [224, 102, 51, 255],
+    "Pd": [192, 192, 192],
 }
 
 # Bond distance table in Angstroms for single, double, and triple bonds
