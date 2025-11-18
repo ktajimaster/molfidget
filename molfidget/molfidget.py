@@ -323,6 +323,88 @@ class Molecule:
         # Find the bonds based on the atom pairs
         self.find_bonds()
 
+    def load_cml_file(self, config: ShapeConfig, file_name):
+        import xml.etree.ElementTree as ET
+        print(f"{config}, {file_name}")
+        tree = ET.parse(file_name)
+        root = tree.getroot()
+        # グローバルパラメータ（config）
+        # グローバルパラメータはルート直下のpropertyのみ扱う
+        for prop in root.findall('./{*}property'):
+            dictRef = prop.attrib.get('dictRef', '')
+            if dictRef.startswith('molfidget:'):
+                key = dictRef.split(':')[1]
+                print(f"{key}")
+                scalar = prop.find('{*}scalar')
+                if scalar is not None:
+                    value = scalar.text
+                    # 数値変換できるものだけ
+                    try:
+                        setattr(config, key, float(value))
+                    except (ValueError, AttributeError):
+                        pass
+                # value属性がある場合（例: scale, vdw_scale）
+                if 'value' in prop.attrib:
+                    try:
+                        setattr(config, key, float(prop.attrib['value']))
+                    except (ValueError, AttributeError):
+                        pass
+        print(f"{config}, {file_name}")
+        # 原子情報
+        self.atoms.clear()
+        atomArray = root.find('.//{*}atomArray')
+        if atomArray is not None:
+            for atom_elem in atomArray.findall('{*}atom'):
+                id_str = atom_elem.attrib['id']
+                name = atom_elem.attrib['elementType']
+                x = float(atom_elem.attrib['x3'])
+                y = float(atom_elem.attrib['y3'])
+                z = float(atom_elem.attrib['z3'])
+                # idは末尾の数字
+                atom_id = int(id_str.split('_')[-1])
+                self.atoms[atom_id] = Atom(atom_id, name, x, y, z)
+                print(f"Loaded atom: {self.atoms[atom_id]}, {name}, xyz=({x}, {y}, {z})")
+        # 結合情報
+        bondArray = root.find('.//{*}bondArray')
+        if bondArray is not None:
+            for bond_elem in bondArray.findall('{*}bond'):
+                atomRefs = bond_elem.attrib['atomRefs2'].split()
+                id1 = int(atomRefs[0].split('_')[-1])
+                id2 = int(atomRefs[1].split('_')[-1])
+                bond_order = int(bond_elem.attrib.get('order', '1'))
+                bond_type = bond_elem.attrib.get('type')
+                if bond_type is None:
+                    bond_type = {1: "single", 2: "double", 3: "triple"}.get(bond_order, "single")
+
+                bond_params = {}
+                for prop_elem in bond_elem.findall('{*}property'):
+                    dictRef = prop_elem.attrib.get('dictRef', '')
+                    if not dictRef.startswith('molfidget:'):
+                        continue
+                    key = dictRef.split(':', 1)[1] if ':' in dictRef else dictRef
+                    value = prop_elem.attrib.get('value')
+                    if value is None:
+                        scalar = prop_elem.find('{*}scalar')
+                        if scalar is not None:
+                            value = scalar.text
+                    if value is None:
+                        continue
+                    if key == "bond_type":
+                        bond_params[key] = value
+                    else:
+                        try:
+                            bond_params[key] = float(value)
+                        except ValueError:
+                            bond_params[key] = value
+
+                bond_type = bond_params.pop("bond_type", bond_type)
+                bond = Bond(self.atoms[id1], self.atoms[id2], type=bond_type, shaft=id1 < id2)
+                for k, v in bond_params.items():
+                    setattr(bond, k, v)
+                self.atoms[id1].pairs[id1, id2] = bond
+                self.atoms[id2].pairs[id1, id2] = Bond(self.atoms[id2], self.atoms[id1], type=bond_type, shaft=id2 < id1)
+                print(f"Loaded bond: {self.atoms[id1].name}_{id1} - {self.atoms[id2].name}_{id2}, type={bond_type}")
+
     def create_pairs(self):
         # Update the pairs of atoms based on the distance between them
         for id1, atom1 in self.atoms.items():
@@ -456,10 +538,13 @@ def main():
 
     molecule = Molecule()
 
-    if args.file_name.endswith(".pdb"):
+    input_ext = os.path.splitext(args.file_name)[1].lower()
+    if input_ext == ".pdb":
         molecule.load_pdb_file(args.file_name)
-    elif args.file_name.endswith(".mol"):
+    elif input_ext == ".mol":
         molecule.load_mol_file(args.file_name)
+    elif input_ext == ".cml":
+        molecule.load_cml_file(config, args.file_name)
     else:
         exit(f"Unsupported file format: {args.file_name}. Please provide a .pdb or .mol file.")
 
@@ -487,39 +572,52 @@ def main():
     with open(os.path.join(args.output_dir, "config.yaml"), 'w') as file:
         yaml.dump(config_data, file, default_flow_style=False)
 
-    # Save the configuration to a CML file
-    input_file_name = os.path.splitext(os.path.basename(args.file_name))[0]
-    with open(os.path.join(args.output_dir, f"{input_file_name}.cml"), 'w') as file:
-        file.write(f'<?xml version="1.0" encoding="UTF-8"?>\n')
-        file.write(f'<molecule xmlns="http://www.xml-cml.org/schema" xmlns:cml="http://www.xml-cml.org/dict/cml"\
-                   xmlns:units="http://www.xml-cml.org/units/units" xmlns:xsd="http://www.w3c.org/2001/XMLSchema"\
-                   xmlns:iupac="http://www.iupac.org" xmlns:molfidget="https://github.com/longjie0723/molfidget"> id="{input_file_name}">\n')
-        file.write(f'    <atomArray>\n')
-        for atom in molecule.atoms.values():
-            file.write(f'      <atom id="{atom.name}_{atom.id}" elementType="{atom.name}" x3="{atom.x}" y3="{atom.y}" z3="{atom.z}"/>\n')
-        file.write(f'    </atomArray>\n')
-        file.write(f'    <bondArray>\n')
-        # Write bonds
-        written_bonds = set()
-        for atom in molecule.atoms.values():
-            for (id1, id2), bond in atom.pairs.items():
-                # Avoid writing the same bond twice
-                bond_key = tuple(sorted([id1, id2]))
-                if bond_key not in written_bonds and bond.type != "none":
-                    written_bonds.add(bond_key)
-                    atom1_id = molecule.atoms[id1].name + '_' + str(id1)
-                    atom2_id = molecule.atoms[id2].name + '_' + str(id2)
-                    bond_order = 1
-                    if bond.type == "double":
-                        bond_order = 2
-                    elif bond.type == "triple":
-                        bond_order = 3
-                    file.write(f'      <bond atomRefs2="{atom1_id} {atom2_id}" order="{bond_order}"/>\n')
-                    file.write(f'       <property dictRef="molfidget:bond_gap">\n')
-                    file.write(f'           <scalar units="units:angstrom">{config.bond_gap}</scalar>\n')
-                    file.write(f'       </property>\n')
-        file.write(f'    </bondArray>\n')
-        file.write(f'  </molecule>\n')
+    # Save the configuration to a CML file (skip if input already CML)
+    if input_ext != ".cml":
+        input_file_name = os.path.splitext(os.path.basename(args.file_name))[0]
+        with open(os.path.join(args.output_dir, f"{input_file_name}.cml"), 'w') as file:
+            file.write(f'<?xml version="1.0" encoding="UTF-8"?>\n')
+            file.write(f'<molecule xmlns="http://www.xml-cml.org/schema" xmlns:cml="http://www.xml-cml.org/dict/cml" \
+    xmlns:units="http://www.xml-cml.org/units/units" xmlns:xsd="http://www.w3.org/2001/XMLSchema" \
+    xmlns:iupac="http://www.iupac.org" xmlns:molfidget="https://github.com/longjie0723/molfidget" id="{input_file_name}">\n')
+            # Write global properties for molecule
+            file.write(f'   <property dictRef="molfidget:scale" units="units:none" dataType="xsd:double" value="{config.scale}"/>\n')
+            file.write(f'   <property dictRef="molfidget:vdw_scale" units="units:none" dataType="xsd:double" value="{config.vdw_scale}"/>\n')
+            config_props = ['chamfer_length', 'hole_length', 'hole_radius', 'shaft_length', 'shaft_radius', 
+                            'slice_distance', 'stopper_length', 'stopper_radius', 'wall_thickness']
+            for prop in config_props:
+                value = getattr(config, prop)
+                file.write(f'<property dictRef="molfidget:{prop}" units="units:angstrom" dataType="xsd:double" value="{value}"/>\n')
+            
+            # Write atoms
+            file.write(f'    <atomArray>\n')
+            for atom in molecule.atoms.values():
+                file.write(f'      <atom id="{atom.name}_{atom.id}" elementType="{atom.name}" x3="{atom.x}" y3="{atom.y}" z3="{atom.z}"/>\n')
+            file.write(f'    </atomArray>\n')
+            file.write(f'    <bondArray>\n')
+            # Write bonds
+            written_bonds = set()
+            for atom in molecule.atoms.values():
+                for (id1, id2), bond in atom.pairs.items():
+                    # Avoid writing the same bond twice
+                    bond_key = tuple(sorted([id1, id2]))
+                    if bond_key not in written_bonds and bond.type != "none":
+                        written_bonds.add(bond_key)
+                        atom1_id = molecule.atoms[id1].name + '_' + str(id1)
+                        atom2_id = molecule.atoms[id2].name + '_' + str(id2)
+                        bond_order = 1
+                        if bond.type == "double":
+                            bond_order = 2
+                        elif bond.type == "triple":
+                            bond_order = 3
+                        file.write(f'      <bond atomRefs2="{atom1_id} {atom2_id}" order="{bond_order}">\n')
+                        # Write bond properties
+                        file.write(f'       <property dictRef="molfidget:bond_type" dataType="xsd:string" value="{bond.type}"/>\n')
+                        file.write(f'       <property dictRef="molfidget:bond_gap" units="units:angstrom" dataType="xsd:double" value="{config.bond_gap}"/>\n')
+                        file.write(f'       <property dictRef="molfidget:shaft_gap"  units="units:angstrom" dataType="xsd:double" value="{config.shaft_gap}"/>\n')
+                        file.write(f'      </bond>\n')
+            file.write(f'    </bondArray>\n')
+            file.write(f'  </molecule>\n')
 
 if __name__ == "__main__":
     main()
