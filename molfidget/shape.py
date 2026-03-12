@@ -10,6 +10,7 @@ class Shape:
         self.slice_distance = None
         self.slice_radius = None
         self.vector = None
+        self.plane_x = None
 
         self.shape_type = config.shape_type  # bond.pyで必ず設定される
         self.bond_gap_mm = config.bond_gap_mm if config.bond_gap_mm is not None else (default.bond_gap_mm or 0.1)
@@ -60,12 +61,19 @@ class Shape:
     def __str__(self):
         return f"Shape(atom: {self.atom_name}, type: {self.shape_type})"
 
-    def update_atom(self, atom1: Atom, atom2: Atom):
+    def update_atom(self, atom1: Atom, atom2: Atom, plane_x: np.ndarray = None):
         self.atom = atom1
         self.bond_distance = np.linalg.norm(np.array([atom2.x - atom1.x, atom2.y - atom1.y, atom2.z - atom1.z]))
         self.vector = np.array([atom2.x - atom1.x, atom2.y - atom1.y, atom2.z - atom1.z])
         self.atom_distance = np.linalg.norm(self.vector)
         self.vector /= np.linalg.norm(self.vector)
+        self.plane_x = None
+        if plane_x is not None:
+            x = np.array(plane_x, dtype=float)
+            x -= np.dot(x, self.vector) * self.vector
+            x_norm = np.linalg.norm(x)
+            if x_norm > 1e-8:
+                self.plane_x = x / x_norm
 
         # Update the slice distance based on the configuration
         r1 = atom1.vdw_scale * atom1.radius
@@ -79,13 +87,13 @@ class Shape:
         # Create the cavity
         cavity = self.create_cavity_shape()
         cavity.apply_translation([0, 0, self.slice_distance])
-        rotation_matrix = trimesh.geometry.align_vectors([0, 0, 1], self.vector)
+        rotation_matrix = self._rotation_to_bond_frame()
         cavity.apply_transform(rotation_matrix)
         self.atom.mesh = trimesh.boolean.difference([self.atom.mesh, cavity], check_volume=False)
         # Create the shaft
         shaft = self.create_rotate_shaft()
         shaft.apply_translation([0, 0, self.slice_distance])
-        rotation_matrix = trimesh.geometry.align_vectors([0, 0, 1], self.vector)
+        rotation_matrix = self._rotation_to_bond_frame()
         shaft.apply_transform(rotation_matrix)
         self.atom.mesh = trimesh.boolean.union([self.atom.mesh, shaft], check_volume=False)
 
@@ -93,7 +101,7 @@ class Shape:
         """固定軸（Dカット無し）を作成"""
         shaft = self.create_shaft_shape()
         shaft.apply_translation([0, 0, self.slice_distance - self.bond_gap])
-        rotation_matrix = trimesh.geometry.align_vectors([0, 0, 1], self.vector)
+        rotation_matrix = self._rotation_to_bond_frame()
         shaft.apply_transform(rotation_matrix)
         self.atom.mesh = trimesh.boolean.union([self.atom.mesh, shaft], check_volume=False)
 
@@ -101,7 +109,7 @@ class Shape:
         """固定軸（Dカット有り）を作成"""
         shaft = self.create_shaft_dcut_shape()
         shaft.apply_translation([0, 0, self.slice_distance - self.bond_gap])
-        rotation_matrix = trimesh.geometry.align_vectors([0, 0, 1], self.vector)
+        rotation_matrix = self._rotation_to_bond_frame()
         shaft.apply_transform(rotation_matrix)
         self.atom.mesh = trimesh.boolean.union([self.atom.mesh, shaft], check_volume=False)
 
@@ -109,7 +117,7 @@ class Shape:
         """丸穴（Dカット無し）を作成"""
         hole = self.create_hole_shape()
         hole.apply_translation([0, 0, self.slice_distance])
-        rotation_matrix = trimesh.geometry.align_vectors([0, 0, 1], self.vector)
+        rotation_matrix = self._rotation_to_bond_frame()
         hole.apply_transform(rotation_matrix)
         self.atom.mesh = trimesh.boolean.difference([self.atom.mesh, hole], check_volume=False)
 
@@ -117,7 +125,7 @@ class Shape:
         """Dカット穴を作成"""
         hole = self.create_hole_dcut_shape()
         hole.apply_translation([0, 0, self.slice_distance])
-        rotation_matrix = trimesh.geometry.align_vectors([0, 0, 1], self.vector)
+        rotation_matrix = self._rotation_to_bond_frame()
         hole.apply_transform(rotation_matrix)
         self.atom.mesh = trimesh.boolean.difference([self.atom.mesh, hole], check_volume=False)
 
@@ -126,10 +134,42 @@ class Shape:
             return
         taper = self.create_taper_shape()
         taper.apply_translation([0, 0, -self.atom.shape_radius])
-        rotation_matrix = trimesh.geometry.align_vectors([0, 0, 1], self.vector)
+        rotation_matrix = self._rotation_to_bond_frame()
         taper.apply_transform(rotation_matrix)
         self.atom.mesh = trimesh.boolean.intersection([taper, self.atom.mesh], check_volume=False)
         #self.atom.mesh = trimesh.boolean.union([self.atom.mesh, taper], check_volume=False)
+
+    def _rotation_to_bond_frame(self):
+        z = np.array(self.vector, dtype=float)
+        z_norm = np.linalg.norm(z)
+        if z_norm <= 0:
+            return np.eye(4)
+        z /= z_norm
+
+        if self.plane_x is None:
+            return trimesh.geometry.align_vectors([0, 0, 1], z)
+
+        x = np.array(self.plane_x, dtype=float)
+        x -= np.dot(x, z) * z
+        x_norm = np.linalg.norm(x)
+        if x_norm <= 1e-8:
+            return trimesh.geometry.align_vectors([0, 0, 1], z)
+        x /= x_norm
+
+        y = np.cross(z, x)
+        y_norm = np.linalg.norm(y)
+        if y_norm <= 1e-8:
+            return trimesh.geometry.align_vectors([0, 0, 1], z)
+        y /= y_norm
+
+        x = np.cross(y, z)
+        x /= np.linalg.norm(x)
+
+        transform = np.eye(4)
+        transform[:3, 0] = x
+        transform[:3, 1] = y
+        transform[:3, 2] = z
+        return transform
     
     def create_rotate_shaft(self):
         """回転軸（Dカット無し、ストッパー付き）を作成"""

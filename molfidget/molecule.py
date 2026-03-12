@@ -18,6 +18,7 @@ from molfidget.constants import atom_color_table, atom_radius_table
 class Molecule:
     def __init__(self, config: MoleculeConfig, default: DefaultConfig):
         self.atom_groups = OrderedDict()
+        self.default = default
 
         print(f"Loading configuration for molecule: {config.name}")
         self.name = config.name
@@ -70,17 +71,33 @@ class Molecule:
         for bond in self.bonds.values():
             bond.sculpt_atoms()
         for atom in self.atoms.values():
-            atom.mesh.apply_translation([atom.x, atom.y, atom.z])
-            atom.mesh.visual.vertex_colors = atom.color
-            atom.mesh.visual.face_colors = atom.color
-            scene.add_geometry(atom.mesh, geom_name=f"{atom.name}")
+            if atom.in_axis:
+                parts = atom.split_with_internal_axis(
+                    self.atoms, self.default.bond.spin, self.default.bond.bond_gap_mm, self.scale
+                )
+                for i, part in enumerate(parts, start=1):
+                    part.apply_translation([atom.x, atom.y, atom.z])
+                    part.visual.vertex_colors = atom.color
+                    part.visual.face_colors = atom.color
+                    scene.add_geometry(part, geom_name=f"{atom.name}_axis_{i}")
+            else:
+                atom.mesh.apply_translation([atom.x, atom.y, atom.z])
+                atom.mesh.visual.vertex_colors = atom.color
+                atom.mesh.visual.face_colors = atom.color
+                scene.add_geometry(atom.mesh, geom_name=f"{atom.name}")
         return scene
 
     def save_stl_files(self, scale, output_dir: str = "output"):
         for atom in self.atoms.values():
-            mesh = atom.mesh.copy()
-            mesh.apply_scale(scale)
-            mesh.export(os.path.join(output_dir, f"{atom.name}.stl"))    
+            if atom.in_axis and atom.mesh_parts:
+                parts = [part.copy() for part in atom.mesh_parts]
+                merged_mesh = trimesh.util.concatenate(parts)
+                merged_mesh.apply_scale(scale)
+                merged_mesh.export(os.path.join(output_dir, f"{atom.name}.stl"))
+            else:
+                mesh = atom.mesh.copy()
+                mesh.apply_scale(scale)
+                mesh.export(os.path.join(output_dir, f"{atom.name}.stl"))
 
     def merge_atoms(self):
         self.atom_groups.clear()

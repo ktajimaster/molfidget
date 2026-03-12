@@ -78,9 +78,12 @@ class Bond:
         self.vector = np.array([self.atom2.x - self.atom1.x, self.atom2.y - self.atom1.y, self.atom2.z - self.atom1.z])
         self.atom_distance = np.linalg.norm(self.vector)
         self.vector /= np.linalg.norm(self.vector)
+        self.plane_x = self._pick_plane_direction_from_neighbor_bonds(self.vector, atoms)
 
-        self.shape_pair[0].update_atom(self.atom1, self.atom2)
-        self.shape_pair[1].update_atom(self.atom2, self.atom1)
+        self.shape_pair[0].update_atom(self.atom1, self.atom2, self.plane_x)
+        # shape_pair[1] uses the opposite bond axis, so invert plane_x to keep
+        # the D-cut side consistent between shaft and hole.
+        self.shape_pair[1].update_atom(self.atom2, self.atom1, -self.plane_x)
 
     def __repr__(self):
         return f"Bond({self.atom1.name}, {self.atom2.name})"
@@ -293,6 +296,41 @@ class Bond:
             return np.array([0.0, 1.0, 0.0])
         return axis / axis_norm
 
+    def _pick_plane_direction_from_neighbor_bonds(self, normal_vec: np.ndarray, atoms: dict) -> np.ndarray:
+        candidates = []
+        for center in (self.atom1, self.atom2):
+            for pair_bond in center.pairs.values():
+                if pair_bond is self:
+                    continue
+                if pair_bond.bond_type in ("none", "plane"):
+                    continue
+                if pair_bond.atom1_name == center.name:
+                    other_name = pair_bond.atom2_name
+                else:
+                    other_name = pair_bond.atom1_name
+                other_atom = atoms.get(other_name)
+                if other_atom is None:
+                    continue
+                axis = np.array(
+                    [other_atom.x - center.x, other_atom.y - center.y, other_atom.z - center.z],
+                    dtype=float,
+                )
+                axis_norm = np.linalg.norm(axis)
+                if axis_norm <= 0:
+                    continue
+                axis /= axis_norm
+                projected = axis - np.dot(axis, normal_vec) * normal_vec
+                projected_norm = np.linalg.norm(projected)
+                if projected_norm <= 1e-8:
+                    continue
+                candidates.append((projected_norm, projected / projected_norm))
+
+        if not candidates:
+            return self._pick_plane_direction(normal_vec)
+
+        candidates.sort(key=lambda item: item[0], reverse=True)
+        return candidates[0][1]
+
     def _create_hemisphere(self, radius: float, direction: np.ndarray) -> trimesh.Trimesh:
         sphere = trimesh.creation.icosphere(subdivisions=3, radius=radius)
         cap = trimesh.creation.box(extents=[4 * radius, 4 * radius, 2 * radius])
@@ -418,4 +456,3 @@ class Bond:
         transform[:3, 3] = center
         box.apply_transform(transform)
         return box
-

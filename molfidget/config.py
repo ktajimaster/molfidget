@@ -89,6 +89,15 @@ class AtomConfig:
     )  # Position of the atom [x, y, z] in Angstrom
     vdw_scale: float = None  # Scale factor for van der Waals radius
     color: List[int] = None  # Color of the atom in RGBA format [R, G, B, A]
+    in_axis: bool = False  # Split atom with an internal spin axis when True
+    in_axis_gap_mm: float = 0.1  # Gap at the split plane for in-axis atoms [mm]
+    in_axis_shaft_radius: float = 0.3
+    in_axis_shaft_length: float = 0.3
+    in_axis_stopper_radius: float = 0.4
+    in_axis_stopper_length: float = 0.2
+    in_axis_chamfer_length: float = 0.1
+    in_axis_wall_thickness: float = 0.1
+    in_axis_shaft_gap: float = 0.03
 
 
 @dataclass
@@ -254,10 +263,28 @@ def atom_config_representer(dumper, data):
     """AtomConfigをOrderedDictとして表現し、フィールド順序を保持"""
     field_dict = OrderedDict(asdict(data))
     cmap = CommentedMap()
+    in_axis_enabled = bool(field_dict.get("in_axis", False))
+    in_axis_defaults = {
+        "in_axis_gap_mm": 0.1,
+        "in_axis_shaft_radius": 0.3,
+        "in_axis_shaft_length": 0.3,
+        "in_axis_stopper_radius": 0.4,
+        "in_axis_stopper_length": 0.2,
+        "in_axis_chamfer_length": 0.1,
+        "in_axis_wall_thickness": 0.1,
+        "in_axis_shaft_gap": 0.03,
+    }
 
     for key, value in field_dict.items():
         if value is None:
             continue
+        if key == "in_axis" and value is False:
+            continue
+        if key in in_axis_defaults:
+            if not in_axis_enabled:
+                continue
+            if value == in_axis_defaults[key]:
+                continue
         if key == "position":
             cmap[key] = CommentedSeq(value)
             cmap[key].fa.set_flow_style()  # Set flow style for position
