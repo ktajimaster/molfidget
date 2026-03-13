@@ -10,7 +10,7 @@ class Atom:
         self.elem, self.id = self.name.split('_')
         if self.elem not in atom_radius_table:
             raise ValueError(f"Unknown atom {self.elem}: name: {self.name}")
-        self.radius = atom_radius_table[self.elem]
+        self.radius = config.radius if config.radius is not None else atom_radius_table[self.elem]
         self.vdw_scale = config.vdw_scale if config.vdw_scale is not None else default.vdw_scale
         self.shape_radius = self.vdw_scale * self.radius
         self.x, self.y, self.z = config.position
