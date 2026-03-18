@@ -259,6 +259,8 @@ def atom_config_representer(dumper, data):
     for key, value in field_dict.items():
         if value is None:
             continue
+        if key == "suppress_gen" and value is False:
+            continue
         if key == "position":
             cmap[key] = CommentedSeq(value)
             cmap[key].fa.set_flow_style()  # Set flow style for position
