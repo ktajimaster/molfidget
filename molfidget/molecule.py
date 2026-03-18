@@ -62,6 +62,9 @@ class Molecule:
     def __repr__(self):
         return f"Molecule: {self.name}, {len(self.atoms)} atoms"
 
+    def _output_atoms(self):
+        return [atom for atom in self.atoms.values() if not atom.suppress_gen]
+
     def create_trimesh_scene(self):
         # Create a trimesh model for the molecule
         scene = trimesh.Scene()
@@ -73,11 +76,13 @@ class Molecule:
             atom.mesh.apply_translation([atom.x, atom.y, atom.z])
             atom.mesh.visual.vertex_colors = atom.color
             atom.mesh.visual.face_colors = atom.color
+            if atom.suppress_gen:
+                continue
             scene.add_geometry(atom.mesh, geom_name=f"{atom.name}")
         return scene
 
     def save_stl_files(self, scale, output_dir: str = "output"):
-        for atom in self.atoms.values():
+        for atom in self._output_atoms():
             mesh = atom.mesh.copy()
             mesh.apply_scale(scale)
             mesh.export(os.path.join(output_dir, f"{atom.name}.stl"))    
@@ -85,9 +90,11 @@ class Molecule:
     def merge_atoms(self):
         self.atom_groups.clear()
         counter = 0
-        for atom in self.atoms.values():
+        for atom in self._output_atoms():
             for pair in atom.pairs.values():
                 if pair.bond_type in ("none", "plane"): # 近接原子に自動で割り当てられるplaneも除外する
+                    continue
+                if pair.atom1.suppress_gen or pair.atom2.suppress_gen:
                     continue
                 if pair.atom1.elem != pair.atom2.elem:
                     continue

@@ -89,6 +89,7 @@ class AtomConfig:
     )  # Position of the atom [x, y, z] in Angstrom
     vdw_scale: float = None  # Scale factor for van der Waals radius
     color: List[int] = None  # Color of the atom in RGBA format [R, G, B, A]
+    suppress_gen: bool = False  # Trueならshape形成には使い、preview/STL/3MF出力から除外
 
 
 @dataclass
