@@ -130,6 +130,9 @@ class Bond:
                 self._engrave_bond_pattern(atom1, vector, plane_distance, r1, slice_distance)
 
     def _should_apply_marker(self) -> bool:
+        if self.bond_type in ("plane", "holes"):
+            return False
+
         marker = (self.bond_marker or "").lower()
         if marker == "off":
             return False
@@ -418,4 +421,3 @@ class Bond:
         transform[:3, 3] = center
         box.apply_transform(transform)
         return box
-
