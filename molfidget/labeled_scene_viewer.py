@@ -7,11 +7,14 @@ from trimesh.viewer import SceneViewer
 
 
 class LabeledSceneViewer(SceneViewer):
-    def __init__(self, scene):
+    def __init__(self, scene, label_occlusion=False):
         """
         geometryの名前をラベルとしてtrimesh.sceneを表示するビューアー
         """
-        super().__init__(scene, start_loop=False)
+        # trimeshのフォールバック設定では深度バッファ無しになる環境がある。
+        window_conf = pyglet.gl.Config(depth_size=24, double_buffer=True)
+        super().__init__(scene, start_loop=False, window_conf=window_conf)
+        self.label_occlusion = bool(label_occlusion)
 
         # Pygletのラベル初期化
         self.labels = {}
@@ -61,7 +64,9 @@ class LabeledSceneViewer(SceneViewer):
         visible_labels = []
         for name, (label, position) in self.labels.items():
             screen_x, screen_y, screen_z = self.world_to_screen(position)
-            if not self._is_label_visible(screen_x, screen_y, screen_z):
+            if self.label_occlusion and not self._is_label_visible(
+                screen_x, screen_y, screen_z
+            ):
                 continue
             label.x = screen_x
             label.y = screen_y
@@ -70,24 +75,41 @@ class LabeledSceneViewer(SceneViewer):
         # 2D描画モードに切り替え
         glMatrixMode(GL_PROJECTION)
         glPushMatrix()
-        glLoadIdentity()
-        gluOrtho2D(0, self.width, 0, self.height)
-        glMatrixMode(GL_MODELVIEW)
-        glPushMatrix()
-        glLoadIdentity()
-        # ラベル描画
-        for label in visible_labels:
-            label.draw()
+        try:
+            glLoadIdentity()
+            gluOrtho2D(0, self.width, 0, self.height)
+            glMatrixMode(GL_MODELVIEW)
+            glPushMatrix()
+            try:
+                glLoadIdentity()
+                glPushAttrib(
+                    GL_ENABLE_BIT
+                    | GL_DEPTH_BUFFER_BIT
+                    | GL_COLOR_BUFFER_BIT
+                    | GL_CURRENT_BIT
+                )
+                glDisable(GL_DEPTH_TEST)
+                glDepthMask(GL_FALSE)
 
-        # 3D描画モードに戻す
-        glMatrixMode(GL_PROJECTION)
-        glPopMatrix()
-        glMatrixMode(GL_MODELVIEW)
-        glPopMatrix()
+                # ラベルだけは常に前面に描く
+                for label in visible_labels:
+                    label.draw()
+            finally:
+                glPopAttrib()
+                glMatrixMode(GL_MODELVIEW)
+                glPopMatrix()
+        finally:
+            # 3D描画モードに戻す
+            glMatrixMode(GL_PROJECTION)
+            glPopMatrix()
+            glMatrixMode(GL_MODELVIEW)
 
     def on_draw(self):
         # wireframeの線の太さを細くしたい
         glLineWidth(2.0)
+        glEnable(GL_DEPTH_TEST)
+        glDepthMask(GL_TRUE)
+        glDisable(GL_BLEND)
         super().on_draw()
         self.draw_labels()
 

@@ -73,6 +73,7 @@ molfidget preview data/mlf/ethanol.mlf
 
 * 'q'キーでプレビューが終了します
 * 'w'キーでワイヤフレーム表示になるので内部を確認できます
+* `--label-occlusion` でラベルの隠れ判定を有効化できます
 
 #### 3. generate - MLFファイルからSTLファイルを生成
 
