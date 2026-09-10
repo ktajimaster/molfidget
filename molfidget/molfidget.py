@@ -151,6 +151,11 @@ def setup_argparse():
     convert_parser.add_argument("output_file", type=str, nargs="?", default=None, help="Output molfidget YAML file (optional, defaults to stdout)")
 
     preview_parser = subparsers.add_parser("preview", help="Preview molecule from molfidget file")
+    preview_parser.add_argument(
+        "--label-occlusion",
+        action="store_true",
+        help="Hide labels that are behind rendered geometry",
+    )
     preview_parser.add_argument("molfidget_file", type=str, help="Input molfidget YAML file to preview")
 
     generate_parser = subparsers.add_parser("generate", help="Generate STL files from molfidget file")
@@ -183,7 +188,7 @@ def exec_preview(args):
 
     scene = molecule.create_trimesh_scene()
 
-    viewer = LabeledSceneViewer(scene)
+    viewer = LabeledSceneViewer(scene, label_occlusion=args.label_occlusion)
     pyglet.app.run()
 
 
