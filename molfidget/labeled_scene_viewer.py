@@ -7,30 +7,45 @@ from trimesh.viewer import SceneViewer
 
 
 class LabeledSceneViewer(SceneViewer):
-    def __init__(self, scene, label_occlusion=False):
+    def __init__(self, scene, label_occlusion=False, show_atom_labels=True):
         """
         geometryの名前をラベルとしてtrimesh.sceneを表示するビューアー
         """
-        # trimeshのフォールバック設定では深度バッファ無しになる環境がある。
-        window_conf = pyglet.gl.Config(depth_size=24, double_buffer=True)
+        # 深度バッファを保ちつつ、対応環境ではアンチエイリアスを有効にする。
+        screen = pyglet.canvas.get_display().get_default_screen()
+        try:
+            window_conf = screen.get_best_config(
+                pyglet.gl.Config(
+                    sample_buffers=1,
+                    samples=4,
+                    depth_size=24,
+                    double_buffer=True,
+                )
+            )
+        except pyglet.window.NoSuchConfigException:
+            window_conf = screen.get_best_config(
+                pyglet.gl.Config(depth_size=24, double_buffer=True)
+            )
         super().__init__(scene, start_loop=False, window_conf=window_conf)
         self.label_occlusion = bool(label_occlusion)
+        self.show_atom_labels = bool(show_atom_labels)
 
         # Pygletのラベル初期化
         self.labels = {}
-        for name, geom in self.scene.geometry.items():
-            label = Label(
-                name,
-                font_name="Arial",
-                font_size=16,
-                color=(0, 0, 0, 255),  # 黒、不透明
-                anchor_x="center",
-                anchor_y="center",
-            )
-            # 各ジオメトリの中心位置をラベルの位置に設定
-            # position = geom.bounding_box.centroid
-            position = geom.centroid
-            self.labels[name] = label, position
+        if self.show_atom_labels:
+            for name, geom in self.scene.geometry.items():
+                label = Label(
+                    name,
+                    font_name="Arial",
+                    font_size=16,
+                    color=(0, 0, 0, 255),  # 黒、不透明
+                    anchor_x="center",
+                    anchor_y="center",
+                )
+                # 各ジオメトリの中心位置をラベルの位置に設定
+                # position = geom.bounding_box.centroid
+                position = geom.centroid
+                self.labels[name] = label, position
 
     def world_to_screen(self, point):
         """
@@ -109,9 +124,9 @@ class LabeledSceneViewer(SceneViewer):
         glLineWidth(2.0)
         glEnable(GL_DEPTH_TEST)
         glDepthMask(GL_TRUE)
-        glDisable(GL_BLEND)
         super().on_draw()
-        self.draw_labels()
+        if self.show_atom_labels:
+            self.draw_labels()
 
     def _is_label_visible(self, screen_x: float, screen_y: float, screen_z: float) -> bool:
         """

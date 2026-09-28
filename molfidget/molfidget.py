@@ -156,6 +156,11 @@ def setup_argparse():
         action="store_true",
         help="Hide labels that are behind rendered geometry",
     )
+    preview_parser.add_argument(
+        "--no-atom-labels",
+        action="store_true",
+        help="Hide atom labels in the preview",
+    )
     preview_parser.add_argument("molfidget_file", type=str, help="Input molfidget YAML file to preview")
 
     generate_parser = subparsers.add_parser("generate", help="Generate STL files from molfidget file")
@@ -188,7 +193,11 @@ def exec_preview(args):
 
     scene = molecule.create_trimesh_scene()
 
-    viewer = LabeledSceneViewer(scene, label_occlusion=args.label_occlusion)
+    viewer = LabeledSceneViewer(
+        scene,
+        label_occlusion=args.label_occlusion,
+        show_atom_labels=not args.no_atom_labels,
+    )
     pyglet.app.run()
 
 
